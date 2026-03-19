@@ -1,0 +1,17 @@
+{
+  "name": "trammetroroute",
+  "version": "0.1.0",
+  "description": "AI ebike + subway smart commute planner MVP",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.1.34",
+    "@langchain/langgraph": "^1.2.3"
+  }
+}

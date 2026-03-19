@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TramMetroRoute | 电瓶车+地铁智能导航</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-scooters" aria-hidden="true">
+      <span class="bg-scooter scooter-a"><span class="scooter-body"></span><span class="scooter-wheel wheel-rear"></span><span class="scooter-wheel wheel-front"></span></span>
+      <span class="bg-scooter scooter-b"><span class="scooter-body"></span><span class="scooter-wheel wheel-rear"></span><span class="scooter-wheel wheel-front"></span></span>
+      <span class="bg-scooter scooter-c"><span class="scooter-body"></span><span class="scooter-wheel wheel-rear"></span><span class="scooter-wheel wheel-front"></span></span>
+      <span class="bg-scooter scooter-d"><span class="scooter-body"></span><span class="scooter-wheel wheel-rear"></span><span class="scooter-wheel wheel-front"></span></span>
+      <span class="bg-scooter scooter-e"><span class="scooter-body"></span><span class="scooter-wheel wheel-rear"></span><span class="scooter-wheel wheel-front"></span></span>
+      <span class="bg-scooter scooter-f"><span class="scooter-body"></span><span class="scooter-wheel wheel-rear"></span><span class="scooter-wheel wheel-front"></span></span>
+    </div>
+    <main class="container">
+      <section class="hero">
+        <div class="hero-kicker">Agent-Powered Commute Planner</div>
+        <h1>TramMetroRoute</h1>
+        <p>把电瓶车、地铁、进站口和停车点交给 Agent 一起决策。</p>
+      </section>
+
+      <section class="panel planner-layout">
+        <form id="plannerForm">
+          <label>
+            通勤任务
+            <textarea
+              id="queryField"
+              name="query"
+              placeholder="例如：从大学城西门到港口商务区，尽量少换乘，可以多骑几分钟电瓶车。"
+            >从明光村小区到环球金融中心，尽量少换乘，可以多骑几分钟电瓶车。</textarea>
+          </label>
+          <div id="intentStatus" class="intent-status">
+            系统会先从通勤任务中识别起点和终点，确认后再调用 Agent 分析方案。
+          </div>
+          <section class="intent-shell">
+            <div class="intent-shell-head">
+              <div>
+                <div class="intent-shell-kicker">AI 识别结果</div>
+                <div class="intent-shell-copy">起点、终点和偏好会先在这里确认，再交给 Agent 做路线分析。</div>
+              </div>
+              <span id="intentBadge" class="intent-badge">待识别</span>
+            </div>
+            <div class="intent-grid">
+              <label class="intent-field">
+                起点
+                <input id="originField" name="origin" placeholder="例如：大学城西门" value="" readonly />
+              </label>
+              <label class="intent-field">
+                终点
+                <input id="destinationField" name="destination" placeholder="例如：港口商务区" value="" readonly />
+              </label>
+              <label class="intent-field">
+                偏好
+                <select id="preferenceField" name="preference">
+                  <option value="balanced">平衡</option>
+                  <option value="最快">更快</option>
+                  <option value="少换乘">少换乘</option>
+                  <option value="少走路">少走路</option>
+                  <option value="多骑几分钟，少换乘">多骑几分钟换少换乘</option>
+                </select>
+              </label>
+            </div>
+          </section>
+          <div class="action-row">
+            <button id="detectButton" type="button">识别起终点</button>
+            <button id="editButton" type="button" class="secondary-button">手动修改</button>
+            <button id="confirmButton" type="button" class="secondary-button">确认起终点</button>
+          </div>
+          <button id="submitButton" type="submit" disabled>确认后快速生成方案</button>
+        </form>
+
+        <aside class="agent-note">
+          <h2>Agent 工作流</h2>
+          <p>1. 解析用户意图</p>
+          <p>2. 调用路线规划工具</p>
+          <p>3. 默认调用大模型 Agent 做工具编排和结论生成</p>
+          <p>4. 综合权衡骑行、换乘、步行、进站口和停车点</p>
+        </aside>
+      </section>
+
+      <section id="result" class="result"></section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
