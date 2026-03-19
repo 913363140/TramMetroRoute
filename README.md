@@ -2,6 +2,8 @@
 
 电瓶车 + 地铁联合通勤导航 Agent MVP。
 
+![TramMetroRoute Homepage](./docs-homepage.png)
+
 当前版本已经从“纯规则规划页”升级成“Agent 编排 + 规划工具”结构，并支持“高德真实数据优先，mock 自动兜底”：
 
 - Agent 先理解通勤任务

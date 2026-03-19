@@ -13,6 +13,7 @@ const submitButton = document.querySelector("#submitButton");
 const INTENT_CACHE_KEY = "trammetroroute.intent-cache.v1";
 const PLAN_CACHE_KEY = "trammetroroute.plan-cache.v2";
 const PLAN_CACHE_TTL_MS = 10 * 60 * 1000;
+const DOCS_DEMO_MODE = new URLSearchParams(window.location.search).get("demo") === "1";
 let runtimeConfigPromise = null;
 let amapLoaderPromise = null;
 let mapCardId = 0;
@@ -23,7 +24,8 @@ const state = {
   confirmed: false,
   editable: false,
   detectTimer: null,
-  lastResolvedQuery: ""
+  lastResolvedQuery: "",
+  docsDemoStarted: false
 };
 
 function createCard(title, className = "card") {
@@ -850,6 +852,9 @@ function renderError(message) {
   const card = createCard("请求失败");
   card.appendChild(createMeta(message));
   resultEl.appendChild(card);
+  if (DOCS_DEMO_MODE) {
+    document.body.dataset.docsDemoReady = "error";
+  }
 }
 
 function renderPlanningResult(data) {
@@ -864,6 +869,9 @@ function renderPlanningResult(data) {
   data.planning.plans.forEach((plan, index) => {
     resultEl.appendChild(renderPlan(plan, index));
   });
+  if (DOCS_DEMO_MODE) {
+    document.body.dataset.docsDemoReady = "true";
+  }
 }
 
 async function fetchResolveIntent(payload) {
@@ -932,6 +940,35 @@ async function detectIntent(auto = false, forceRefresh = false) {
     state.recognized = false;
     state.lastResolvedQuery = "";
     resetConfirmation(error.message || "识别失败，请稍后重试。", "error");
+  }
+}
+
+async function runDocsDemo() {
+  if (!DOCS_DEMO_MODE || state.docsDemoStarted) {
+    return;
+  }
+
+  state.docsDemoStarted = true;
+  document.body.dataset.docsDemoReady = "loading";
+
+  try {
+    try {
+      window.localStorage.removeItem(PLAN_CACHE_KEY);
+    } catch (error) {
+      // Ignore cache cleanup failures in docs mode.
+    }
+
+    await detectIntent(false, true);
+    if (!state.recognized) {
+      document.body.dataset.docsDemoReady = "error";
+      return;
+    }
+
+    confirmButton.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 120));
+    form.requestSubmit();
+  } catch (error) {
+    document.body.dataset.docsDemoReady = "error";
   }
 }
 
@@ -1050,4 +1087,8 @@ form.addEventListener("submit", async (event) => {
 
 syncReadonlyState();
 updateIntentBadge("待识别", "neutral");
-detectIntent(true);
+if (DOCS_DEMO_MODE) {
+  runDocsDemo();
+} else {
+  detectIntent(true);
+}
