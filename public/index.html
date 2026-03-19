@@ -41,7 +41,13 @@
                 <div class="intent-shell-kicker">AI 识别结果</div>
                 <div class="intent-shell-copy">起点、终点和偏好会先在这里确认，再交给 Agent 做路线分析。</div>
               </div>
-              <span id="intentBadge" class="intent-badge">待识别</span>
+              <div class="intent-shell-meta">
+                <span id="intentBadge" class="intent-badge">待识别</span>
+                <div class="intent-inline-actions">
+                  <button id="detectButton" type="button" class="ghost-button">重新识别</button>
+                  <button id="editButton" type="button" class="ghost-button">手动修改</button>
+                </div>
+              </div>
             </div>
             <div class="intent-grid">
               <label class="intent-field">
@@ -64,12 +70,10 @@
               </label>
             </div>
           </section>
-          <div class="action-row">
-            <button id="detectButton" type="button">识别起终点</button>
-            <button id="editButton" type="button" class="secondary-button">手动修改</button>
+          <div class="action-row action-row-primary">
             <button id="confirmButton" type="button" class="secondary-button">确认起终点</button>
+            <button id="submitButton" type="submit" disabled>生成 Agent 方案</button>
           </div>
-          <button id="submitButton" type="submit" disabled>确认后快速生成方案</button>
         </form>
 
         <aside class="agent-note">

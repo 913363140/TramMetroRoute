@@ -282,25 +282,72 @@ button {
   letter-spacing: 0.02em;
   cursor: pointer;
   box-shadow: 0 12px 24px rgba(20, 83, 45, 0.18);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 28px rgba(20, 83, 45, 0.2);
 }
 
 button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
   box-shadow: none;
+  transform: none;
 }
 
 .secondary-button {
-  background: rgba(15, 118, 110, 0.08);
+  background: rgba(255, 255, 255, 0.9);
   color: var(--accent-strong);
-  border: 1px solid rgba(15, 118, 110, 0.16);
-  box-shadow: none;
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.08);
 }
 
 .action-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  align-items: center;
+}
+
+.action-row-primary {
+  grid-template-columns: minmax(180px, 0.72fr) minmax(0, 1.4fr);
+}
+
+#submitButton {
+  min-height: 58px;
+  font-size: 18px;
+  letter-spacing: 0.01em;
+}
+
+#confirmButton {
+  min-height: 58px;
+}
+
+.ghost-button {
+  width: auto;
+  min-width: auto;
+  padding: 8px 12px;
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ghost-button:hover:not(:disabled) {
+  color: var(--accent-strong);
+  border-color: rgba(15, 118, 110, 0.2);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 18px rgba(15, 118, 110, 0.08);
 }
 
 .intent-status {
@@ -350,6 +397,12 @@ button:disabled {
   gap: 12px;
 }
 
+.intent-shell-meta {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
 .intent-shell-kicker {
   font-size: 12px;
   font-weight: 700;
@@ -377,6 +430,13 @@ button:disabled {
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.intent-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .intent-badge[data-tone="ready"] {
@@ -866,6 +926,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .action-row-primary {
+    grid-template-columns: 1fr;
+  }
+
   .intent-grid {
     grid-template-columns: 1fr;
   }
@@ -897,6 +961,15 @@ button:disabled {
 
   .intent-shell-head {
     flex-direction: column;
+  }
+
+  .intent-shell-meta {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .intent-inline-actions {
+    justify-content: flex-start;
   }
 }
 
