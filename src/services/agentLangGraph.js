@@ -2,8 +2,18 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { parseIntent } from "./intent.js";
 import { resolveIntent as resolveIntentWithModel } from "./intentResolver.js";
 import { buildCommutePlan } from "./planner.js";
+import {
+  createClaudeSdkRuntime,
+  isClaudeAgentSdkCompatible,
+  markClaudeAgentSdkUnavailable,
+  runClaudeTextQuery
+} from "./claudeAgentSdk.js";
 
-const DEFAULT_TIMEOUT_MS = Number(process.env.AGENT_HTTP_TIMEOUT_MS || 15000);
+const DEFAULT_TIMEOUT_MS = Number(process.env.AGENT_HTTP_TIMEOUT_MS || 12000);
+const DEFAULT_SUMMARY_TIMEOUT_MS = Number(
+  process.env.AGENT_SUMMARY_TIMEOUT_MS || process.env.AGENT_HTTP_TIMEOUT_MS || 5000
+);
+const REMOTE_SUMMARY_MODE = process.env.AGENT_REMOTE_SUMMARY_MODE || "auto";
 
 const AgentGraphState = Annotation.Root({
   input: Annotation(),
@@ -101,6 +111,7 @@ function getAgentConfig() {
     provider,
     model,
     timeoutMs: DEFAULT_TIMEOUT_MS,
+    summaryTimeoutMs: DEFAULT_SUMMARY_TIMEOUT_MS,
     executionMode: process.env.AGENT_EXECUTION_MODE || "remote",
     enabled: Boolean(apiKey && model)
   };
@@ -299,10 +310,42 @@ async function requestAnthropicSummary(config, prompt, traceId) {
 
 async function summarizeWithModel(config, intent, planning, traceId) {
   const prompt = buildSummaryPrompt(intent, planning);
-  if (config.provider === "anthropic") {
-    return requestAnthropicSummary(config, prompt, traceId);
+  const summaryConfig = {
+    ...config,
+    timeoutMs: config.summaryTimeoutMs || config.timeoutMs
+  };
+  if (isClaudeAgentSdkCompatible(summaryConfig)) {
+    const runtime = createClaudeSdkRuntime(summaryConfig);
+    logAgent(traceId, "claude-agent-sdk.summary.start", {
+      model: summaryConfig.model,
+      timeoutMs: summaryConfig.timeoutMs,
+      apiKey: redactSecret(summaryConfig.apiKey)
+    });
+    const startedAt = Date.now();
+    try {
+      const text = await runClaudeTextQuery({
+        prompt,
+        systemPrompt: "你是中文通勤规划助手。请严格基于给定规划结果输出答案，不要编造。",
+        ...runtime
+      });
+      logAgent(traceId, "claude-agent-sdk.summary.finish", {
+        durationMs: Date.now() - startedAt,
+        bodyPreview: truncate(text)
+      });
+      return stripThinkingBlocks(text);
+    } catch (error) {
+      markClaudeAgentSdkUnavailable(error);
+      logAgentError(traceId, "claude-agent-sdk.summary.error", {
+        model: summaryConfig.model,
+        message: error?.message || String(error)
+      });
+    }
   }
-  return requestOpenAISummary(config, prompt, traceId);
+
+  if (summaryConfig.provider === "anthropic") {
+    return requestAnthropicSummary(summaryConfig, prompt, traceId);
+  }
+  return requestOpenAISummary(summaryConfig, prompt, traceId);
 }
 
 function routeFromStart(state) {
@@ -313,6 +356,19 @@ function routeFromStart(state) {
 }
 
 function routeAfterPlanning(state) {
+  if (REMOTE_SUMMARY_MODE === "local") {
+    return "local_summary";
+  }
+
+  const hasConfirmedTrip = Boolean(state?.input?.origin && state?.input?.destination);
+  const hasRecommendedPlan = Boolean(state?.planning?.summary?.recommended);
+  const shouldPreferLocalSummary =
+    REMOTE_SUMMARY_MODE === "auto" && hasConfirmedTrip && hasRecommendedPlan;
+
+  if (shouldPreferLocalSummary) {
+    return "local_summary";
+  }
+
   if (state?.config?.executionMode === "remote" && state?.config?.enabled) {
     return "remote_summary";
   }

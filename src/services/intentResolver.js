@@ -1,4 +1,10 @@
 import { parseIntent } from "./intent.js";
+import {
+  createClaudeSdkRuntime,
+  isClaudeAgentSdkCompatible,
+  markClaudeAgentSdkUnavailable,
+  runClaudeStructuredQuery
+} from "./claudeAgentSdk.js";
 
 const INTENT_CACHE_TTL_MS = Number(process.env.INTENT_CACHE_TTL_MS || 10 * 60 * 1000);
 const intentCache = new Map();
@@ -17,6 +23,21 @@ const INTENT_SYSTEM_PROMPT = `
 - 输出必须是 JSON，不要使用 markdown，不要解释。
 - 如果某项无法确定，填空字符串或 false。
 `.trim();
+
+const INTENT_OUTPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    origin: { type: "string" },
+    destination: { type: "string" },
+    mode: {
+      type: "string",
+      enum: ["balanced", "less_transfer", "faster", "less_walk"]
+    },
+    preferLongerRide: { type: "boolean" }
+  },
+  required: ["origin", "destination", "mode", "preferLongerRide"]
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -76,6 +97,7 @@ function getIntentModelConfig() {
     process.env.ANTHROPIC_AUTH_TOKEN ||
     "";
   const model =
+    process.env.INTENT_MODEL ||
     process.env.AGENT_MODEL ||
     process.env.LLM_MODEL ||
     process.env.OPENAI_MODEL ||
@@ -89,7 +111,9 @@ function getIntentModelConfig() {
     baseUrl: baseUrl.replace(/\/$/, ""),
     provider,
     model,
-    timeoutMs: Number(process.env.INTENT_HTTP_TIMEOUT_MS || process.env.AGENT_HTTP_TIMEOUT_MS || 12000),
+    timeoutMs: Number(
+      process.env.INTENT_HTTP_TIMEOUT_MS || process.env.AGENT_HTTP_TIMEOUT_MS || 8000
+    ),
     enabled: Boolean(apiKey && model)
   };
 }
@@ -293,6 +317,41 @@ async function requestIntentWithModel(input, config) {
     timeoutMs: config.timeoutMs,
     query: input.query || ""
   });
+
+  if (isClaudeAgentSdkCompatible(config)) {
+    const runtime = createClaudeSdkRuntime(config);
+    logIntent("claude-agent-sdk.start", {
+      provider: config.provider,
+      model: config.model,
+      timeoutMs: config.timeoutMs
+    });
+
+    const startedAt = Date.now();
+    try {
+      const result = await runClaudeStructuredQuery({
+        prompt: JSON.stringify({
+          query: input.query || "",
+          preference: input.preference || ""
+        }),
+        systemPrompt: INTENT_SYSTEM_PROMPT,
+        schema: INTENT_OUTPUT_SCHEMA,
+        ...runtime
+      });
+
+      logIntent("claude-agent-sdk.finish", {
+        durationMs: Date.now() - startedAt,
+        bodyPreview: truncate(result)
+      });
+
+      return result;
+    } catch (error) {
+      markClaudeAgentSdkUnavailable(error);
+      logIntentError("claude-agent-sdk.error", {
+        model: config.model,
+        message: error?.message || String(error)
+      });
+    }
+  }
 
   if (config.provider === "anthropic") {
     return requestAnthropicIntent(input, config);
