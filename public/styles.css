@@ -516,6 +516,13 @@ button:disabled {
     var(--card-strong);
 }
 
+.preview-card {
+  margin-top: 14px;
+  background:
+    linear-gradient(135deg, rgba(20, 83, 45, 0.06), rgba(255, 255, 255, 0.94) 44%),
+    var(--card-strong);
+}
+
 .map-status {
   margin: 8px 0 12px;
   color: var(--muted);
@@ -535,6 +542,35 @@ button:disabled {
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.loading-stage {
+  font-weight: 600;
+  color: #274b42;
+}
+
+.loading-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.loading-progress-item {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.54);
+  border: 1px solid rgba(15, 118, 110, 0.1);
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.loading-preview {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(15, 118, 110, 0.1);
+  min-height: 120px;
 }
 
 .map-canvas {

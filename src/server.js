@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import "./loadEnv.js";
 import { runPlanningAgent, getAgentStatus } from "./services/agent.js";
+import { buildFastSummary } from "./services/agentLangGraph.js";
 import { parseIntent } from "./services/intent.js";
 import { resolveIntent } from "./services/intentResolver.js";
 import { buildCommutePlan, getPlannerStatus } from "./services/planner.js";
@@ -22,6 +23,59 @@ function logServer(stage, detail = {}) {
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(data, null, 2));
+}
+
+function startJsonStream(res) {
+  res.writeHead(200, {
+    "Content-Type": "application/x-ndjson; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive"
+  });
+}
+
+function sendStreamEvent(res, type, data = {}) {
+  res.write(`${JSON.stringify({ type, ...data })}\n`);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function buildPlanningPreviewPayload(planning) {
+  return {
+    summary: {
+      mode: planning?.summary?.mode || "balanced",
+      candidatePlans: planning?.summary?.candidatePlans || 0,
+      recommended: planning?.summary?.recommended
+        ? {
+            originStation: planning.summary.recommended.originStation,
+            destinationStation: planning.summary.recommended.destinationStation,
+            totalMinutes: planning.summary.recommended.totalMinutes,
+            transfers: planning.summary.recommended.transfers,
+            originEntrance: planning.summary.recommended.originEntrance
+          }
+        : null
+    }
+  };
+}
+
+async function streamMarkdownSummary(res, message) {
+  const sections = String(message || "")
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  let accumulated = "";
+
+  for (const section of sections) {
+    accumulated = accumulated ? `${accumulated}\n\n${section}` : section;
+    sendStreamEvent(res, "agent.message.delta", {
+      delta: section,
+      accumulated
+    });
+    await sleep(90);
+  }
 }
 
 async function serveStaticFile(res, relativePath, contentType = "text/html; charset=utf-8") {
@@ -171,6 +225,105 @@ const server = http.createServer(async (req, res) => {
         message: error?.message || String(error)
       });
       sendJson(res, 400, { error: "invalid JSON payload" });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/agent-plan-stream") {
+    const startedAt = Date.now();
+    try {
+      const body = await readBody(req);
+      const intent = parseIntent(body);
+      if (!intent.origin || !intent.destination) {
+        sendJson(res, 400, {
+          error: "please provide origin and destination, or write a query like 从A到B"
+        });
+        return;
+      }
+
+      startJsonStream(res);
+      sendStreamEvent(res, "status", {
+        stage: "started",
+        message: "任务已接收，开始分析通勤方案。"
+      });
+      sendStreamEvent(res, "step", {
+        name: "resolve_intent",
+        summary: `识别起点为“${intent.origin}”，终点为“${intent.destination}”，已使用确认后的起终点。`
+      });
+      sendStreamEvent(res, "status", {
+        stage: "planning",
+        message: "正在请求高德真实路线、站点出口和停车点。"
+      });
+
+      const planning = await buildCommutePlan({
+        query: body.query || "",
+        origin: body.origin || "",
+        destination: body.destination || "",
+        preference: body.preference || ""
+      });
+
+      sendStreamEvent(res, "planning.ready", {
+        planningPreview: buildPlanningPreviewPayload(planning)
+      });
+      sendStreamEvent(res, "step", {
+        name: "plan_commute",
+        summary:
+          planning?.summary?.recommended
+            ? `已生成 ${planning.plans.length} 个候选方案，正在整理推荐结论。`
+            : "规划器暂时没有找到可用方案，正在整理说明。"
+      });
+
+      const message = buildFastSummary(planning);
+      sendStreamEvent(res, "status", {
+        stage: "summarizing",
+        message: "路线已生成，正在整理 Agent 结论。"
+      });
+      await streamMarkdownSummary(res, message);
+
+      const result = {
+        agent: {
+          mode: "local-fast",
+          provider: "built-in",
+          model: "rule-based-agent",
+          message,
+          steps: [
+            {
+              type: "tool",
+              name: "resolve_intent",
+              summary: `识别起点为“${intent.origin}”，终点为“${intent.destination}”，已使用确认后的起终点。`
+            },
+            {
+              type: "tool",
+              name: "plan_commute",
+              summary:
+                planning?.summary?.recommended
+                  ? `共生成 ${planning.plans.length} 个候选方案，推荐从 ${planning.summary.recommended.originStation} 出发，预计 ${planning.summary.recommended.totalMinutes} 分钟，换乘 ${planning.summary.recommended.transfers} 次。`
+                  : "规划器没有找到可用的联合通勤方案。"
+            },
+            {
+              type: "final",
+              name: "agent_response",
+              summary: message
+            }
+          ]
+        },
+        planning
+      };
+
+      sendStreamEvent(res, "done", {
+        result,
+        durationMs: Date.now() - startedAt
+      });
+      res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        sendJson(res, 400, { error: "invalid JSON payload" });
+        return;
+      }
+      sendStreamEvent(res, "error", {
+        message: error?.message || "流式规划失败"
+      });
+      res.end();
     }
     return;
   }

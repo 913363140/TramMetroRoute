@@ -139,7 +139,7 @@ function summarizePlanResult(result) {
   return `共生成 ${result.plans.length} 个候选方案，推荐从 ${recommended.originStation} 出发，预计 ${recommended.totalMinutes} 分钟，换乘 ${recommended.transfers} 次。`;
 }
 
-function buildFastSummary(planning) {
+export function buildFastSummary(planning) {
   const recommended = planning?.summary?.recommended;
   if (!recommended) {
     return "## 推荐结果\n\n暂时没有找到合适的电瓶车 + 地铁联合通勤方案。";

@@ -67,14 +67,22 @@ function stopLoadingTimer() {
 
 function createLoadingCard() {
   const loading = createCard("AI 正在思考 🤖🧠", "card loading-card");
-  loading.appendChild(
-    createMeta("正在分析骑行、换乘、步行和进站口，马上为你生成最优通勤方案 🗺️⚡")
-  );
+  const stage = createMeta("正在分析骑行、换乘、步行和进站口，马上为你生成最优通勤方案 🗺️⚡");
+  stage.classList.add("loading-stage");
+  loading.appendChild(stage);
 
   const timer = document.createElement("div");
   timer.className = "loading-timer";
   timer.textContent = "已思考 00:00";
   loading.appendChild(timer);
+
+  const progress = document.createElement("div");
+  progress.className = "loading-progress";
+  loading.appendChild(progress);
+
+  const preview = document.createElement("div");
+  preview.className = "loading-preview agent-markdown";
+  loading.appendChild(preview);
 
   const startedAt = Date.now();
   stopLoadingTimer();
@@ -82,7 +90,34 @@ function createLoadingCard() {
     timer.textContent = `已思考 ${formatElapsed(Date.now() - startedAt)}`;
   }, 1000);
 
+  loading.stageEl = stage;
+  loading.progressEl = progress;
+  loading.previewEl = preview;
+
   return loading;
+}
+
+function setLoadingStage(loadingCard, text) {
+  if (loadingCard?.stageEl) {
+    loadingCard.stageEl.textContent = text;
+  }
+}
+
+function appendLoadingProgress(loadingCard, text) {
+  if (!loadingCard?.progressEl || !text) {
+    return;
+  }
+  const item = document.createElement("div");
+  item.className = "loading-progress-item";
+  item.textContent = text;
+  loadingCard.progressEl.appendChild(item);
+}
+
+function setLoadingPreview(loadingCard, markdown) {
+  if (!loadingCard?.previewEl) {
+    return;
+  }
+  loadingCard.previewEl.innerHTML = markdown ? markdownToHtml(markdown) : "";
 }
 
 function escapeHtml(text) {
@@ -900,6 +935,112 @@ async function fetchAgentPlan(payload) {
   return data;
 }
 
+async function fetchAgentPlanStream(payload, handlers = {}) {
+  const response = await fetch("/api/agent-plan-stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "接口异常");
+  }
+
+  if (!response.body) {
+    throw new Error("当前浏览器不支持流式响应");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      const event = JSON.parse(trimmed);
+      if (event.type === "status") {
+        handlers.onStatus?.(event);
+        continue;
+      }
+      if (event.type === "step") {
+        handlers.onStep?.(event);
+        continue;
+      }
+      if (event.type === "planning.ready") {
+        handlers.onPlanningReady?.(event.planningPreview || event.planning);
+        continue;
+      }
+      if (event.type === "agent.message.delta") {
+        handlers.onMessageDelta?.(event);
+        continue;
+      }
+      if (event.type === "done") {
+        handlers.onDone?.(event.result);
+        continue;
+      }
+      if (event.type === "error") {
+        throw new Error(event.message || "流式规划失败");
+      }
+    }
+  }
+}
+
+function buildPlanningPreview(planning) {
+  const recommended = planning?.summary?.recommended;
+  if (!recommended) {
+    return "## 规划进度\n\n已完成真实路线计算，正在整理结论。";
+  }
+
+  return [
+    "## 已拿到候选方案",
+    "",
+    `当前优先候选是 **${recommended.originStation} -> ${recommended.destinationStation}**。`,
+    "",
+    `- 总耗时：**${recommended.totalMinutes} 分钟**`,
+    `- 换乘次数：**${recommended.transfers} 次**`,
+    `- 推荐进站口：**${recommended.originEntrance}**`
+  ].join("\n");
+}
+
+function renderPlanPreviewCard(planningPreview) {
+  const recommended = planningPreview?.summary?.recommended;
+  const card = createCard("候选方案预览", "card preview-card");
+
+  if (!recommended) {
+    card.appendChild(createMeta("已完成真实路线计算，正在整理候选方案。"));
+    return card;
+  }
+
+  card.appendChild(
+    createMeta(`路线：${recommended.originStation} -> ${recommended.destinationStation}`)
+  );
+  card.appendChild(
+    createMeta(`总耗时 ${recommended.totalMinutes} 分钟 | 换乘 ${recommended.transfers} 次`)
+  );
+  card.appendChild(createMeta(`推荐进站口：${recommended.originEntrance}`));
+
+  const badgeRow = document.createElement("div");
+  badgeRow.className = "badge-row";
+  badgeRow.appendChild(createBadge("高德真实候选"));
+  badgeRow.appendChild(createBadge(`候选数 ${planningPreview?.summary?.candidatePlans || 0}`));
+  card.appendChild(badgeRow);
+
+  return card;
+}
+
 async function detectIntent(auto = false, forceRefresh = false) {
   const query = queryField.value.trim();
   if (!query) {
@@ -1075,13 +1216,53 @@ form.addEventListener("submit", async (event) => {
   resultEl.appendChild(loading);
 
   try {
-    const data = await fetchAgentPlan(payload);
+    let latestPlanning = null;
+    let finalResult = null;
+    let previewCard = null;
+
+    await fetchAgentPlanStream(payload, {
+      onStatus(eventData) {
+        setLoadingStage(loading, eventData.message || "正在处理...");
+      },
+      onStep(eventData) {
+        appendLoadingProgress(loading, eventData.summary || eventData.name || "已完成一步");
+      },
+      onPlanningReady(planning) {
+        latestPlanning = planning;
+        setLoadingPreview(loading, buildPlanningPreview(planning));
+        if (previewCard) {
+          previewCard.remove();
+        }
+        previewCard = renderPlanPreviewCard(planning);
+        resultEl.appendChild(previewCard);
+      },
+      onMessageDelta(eventData) {
+        setLoadingPreview(loading, eventData.accumulated || "");
+      },
+      onDone(result) {
+        finalResult = result;
+      }
+    });
+
     stopLoadingTimer();
-    writePlanCache(planCacheKey, data);
-    renderPlanningResult(data);
+    if (!finalResult) {
+      throw new Error("流式结果未完整返回");
+    }
+    writePlanCache(planCacheKey, finalResult);
+    renderPlanningResult(finalResult);
   } catch (error) {
-    stopLoadingTimer();
-    renderError(error.message || "网络异常，请检查服务是否启动");
+    if (latestPlanning) {
+      setLoadingStage(loading, "流式输出中断，正在回退为完整结果...");
+    }
+    try {
+      const data = await fetchAgentPlan(payload);
+      stopLoadingTimer();
+      writePlanCache(planCacheKey, data);
+      renderPlanningResult(data);
+    } catch (fallbackError) {
+      stopLoadingTimer();
+      renderError(fallbackError.message || error.message || "网络异常，请检查服务是否启动");
+    }
   }
 });
 
